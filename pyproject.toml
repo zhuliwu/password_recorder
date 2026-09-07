@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "password-recorder"
+version = "0.2.0"
+description = "A local encrypted password vault"
+requires-python = ">=3.10"
+dependencies = ["Flask>=3.1,<4", "cryptography>=46,<47", "waitress>=3,<4"]
+
+[project.scripts]
+password-recorder = "vault.__main__:main"
+
+[tool.setuptools]
+packages = ["vault"]
+include-package-data = false
+
+[tool.setuptools.package-data]
+vault = ["static/*", "templates/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
