@@ -72,7 +72,7 @@ $("recover-form").onsubmit = async e => {
     $("recover-dialog").close(); await showWorkspace();
     toast("主密码已重置，旧恢复密钥已作废，请重新设置恢复密钥");
   } catch (error) {
-    const message = error.message.startsWith("无法连接") ? "恢复结果未确认，请先尝试用新主密码解锁；不要丢弃原恢复密钥。" : error.message;
+    const message = error.resultUnknown || error.message.startsWith("无法连接") ? "恢复结果未确认，请先尝试用新主密码解锁；不要丢弃原恢复密钥。" : error.message;
     if ($("recover-dialog").open) $("recover-error").textContent = message; else report(error);
   } finally {
     recovering = false; $("submit-recover").disabled = $("close-recover").disabled = false;

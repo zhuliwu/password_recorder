@@ -45,7 +45,7 @@ def stop(process):
         process.wait()
 
 
-def recovery_flow(page):
+def recovery_flow(page, lost_response=None):
     new_master = "browser recovered master 987!"
     page.locator("#manage-recovery").click()
     page.locator("#recovery-master").fill("wrong master password")
@@ -90,7 +90,15 @@ def recovery_flow(page):
     page.locator("#submit-recover").click()
     expect(page.locator("#recover-error")).to_contain_text("不正确")
     page.locator("#recovery-key-input").fill(key)
+    if lost_response:
+        page.route("**/api/recover", lost_response)
     page.locator("#submit-recover").click()
+    if lost_response:
+        expect(page.locator("#recover-error")).to_contain_text("恢复结果未确认")
+        page.unroute("**/api/recover")
+        page.locator("#close-recover").click()
+        page.locator("#master").fill(new_master)
+        page.locator("#unlock-button").click()
     expect(page.locator("#workspace")).to_be_visible()
     expect(page.locator(".entry-row")).to_have_count(1)
     expect(page.locator("#recovery-status")).to_contain_text("备用钥匙")

@@ -11,3 +11,8 @@ data/
 *.log
 test-results/
 .DS_Store
+deploy/generated/
+*.pem
+*.key
+*.p12
+*.pfx
