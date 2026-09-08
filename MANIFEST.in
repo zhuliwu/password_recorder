@@ -1,0 +1,4 @@
+include README.md AGENTS.md handoff.md
+recursive-include deploy *.md *.conf *.example
+recursive-include tests *.py
+prune deploy/generated

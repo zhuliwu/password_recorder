@@ -9,11 +9,11 @@
 <body>
 <section id="gate" class="gate">
   <div class="gate-story"><a class="brand" href="/"><span class="brand-icon">密</span><span>密匣<small>LOCAL VAULT</small></span></a>
-    <div><span class="eyebrow">YOUR PASSWORDS. YOUR SPACE.</span><h1>重要的账号，<br>安心放在这里。</h1><p>为你的数字生活留一处私密空间。<br>本地保存，主密码守护，随时取用。</p></div>
-    <div class="story-footer"><span class="status-dot"></span> 数据只保存在这台设备</div>
+    <div><span class="eyebrow">YOUR PASSWORDS. YOUR SPACE.</span><h1>重要的账号，<br>安心放在这里。</h1><p>为你的数字生活留一处私密空间。<br>{{ '加密保存' if remote_mode else '本地保存' }}，主密码守护，随时取用。</p></div>
+    <div class="story-footer"><span class="status-dot"></span> {{ '数据加密保存在服务端设备' if remote_mode else '数据只保存在这台设备' }}</div>
   </div>
   <div class="gate-panel"><form id="unlock-form" class="unlock-card">
-    <span class="tag">私人的 · 本地的</span><h2 id="gate-title">正在连接保险库</h2><p id="gate-description" class="muted">请稍候…</p>
+    <span class="tag">{{ '私人的 · 加密的' if remote_mode else '私人的 · 本地的' }}</span><h2 id="gate-title">正在连接保险库</h2><p id="gate-description" class="muted">请稍候…</p>
     <label for="master">主密码</label><input id="master" type="password" minlength="12" maxlength="1024" required autocomplete="current-password" placeholder="至少 12 个字符">
     <div id="confirm-wrap" hidden><label for="master-confirm">再次输入主密码</label><input id="master-confirm" type="password" minlength="12" maxlength="1024" autocomplete="new-password"></div>
     <p id="gate-error" class="error" role="alert"></p><button id="unlock-button" class="primary wide" type="submit" disabled>连接中…</button>
@@ -32,7 +32,7 @@
       <button class="nav-item" data-filter="社交"><span class="category-dot purple"></span>社交</button>
       <button class="nav-item" data-filter="其他"><span class="category-dot gray"></span>其他</button>
     </nav>
-    <div class="sidebar-bottom"><div class="local-card"><span class="status-dot"></span><strong>本地保险库</strong><p>加密保存在当前设备</p></div><button id="lock" class="secondary wide">锁定保险库</button></div>
+    <div class="sidebar-bottom"><div class="local-card"><span class="status-dot"></span><strong>{{ '远程保险库' if remote_mode else '本地保险库' }}</strong><p>{{ '加密保存在服务端设备' if remote_mode else '加密保存在当前设备' }}</p></div><button id="lock" class="secondary wide">锁定保险库</button></div>
   </aside>
   <main><header class="topbar"><span>个人保险库 <span class="breadcrumb">/ <span id="crumb">所有账号</span></span></span><span class="session-badge"><span class="status-dot"></span>已解锁</span></header>
     <div class="content"><div class="page-heading"><div><span class="eyebrow">A LITTLE MORE PEACE OF MIND</span><h1 id="page-title">所有账号</h1><p class="muted">把繁杂交给密匣，把记忆留给生活。</p></div><button id="add" class="primary"><span aria-hidden="true">＋</span> 添加账号</button></div>
@@ -42,7 +42,7 @@
         <div class="list-heading"><span>账号 / 网站</span><span>登录账号</span><span>分类</span><span>操作</span></div><div id="entry-list" aria-live="polite"></div>
         <div id="empty" class="empty" hidden><div class="empty-mark">◇</div><h2>给重要的账号一个家</h2><p>添加第一个账号，让每次登录都从容一点。</p><button id="empty-add" class="secondary">添加第一个账号</button></div>
         <footer class="list-footer"><span id="result-count">正在读取…</span><span>密码默认隐藏，仅在需要时显示</span></footer>
-      </section><p class="footnote">15 分钟无操作后自动锁定 · 不连接云端服务</p>
+      </section><p class="footnote">15 分钟无操作后自动锁定 · {{ '通过 HTTPS 访问你的保险库' if remote_mode else '不连接云端服务' }}</p>
     </div>
   </main>
 </div>

@@ -18,9 +18,18 @@ async function api(path, method = "GET", body) {
   const version = epoch;
   let response;
   try { response = await fetch(`/api${path}`, {method, headers: {"Content-Type": "application/json", "X-Vault-Request": "1"}, body: body === undefined ? undefined : JSON.stringify(body)}); }
-  catch { throw new Error("无法连接本地服务，请确认程序正在运行后重试。"); }
+  catch { throw new Error("无法连接保险库服务，请确认服务已启动或联系管理员后重试。"); }
   if (version !== epoch) throw new DOMException("会话已变更", "AbortError");
-  const data = await response.json();
+  let data;
+  try { data = await response.json(); }
+  catch {
+    const message = response.status === 429 ? "请求过于频繁，请稍后重试。" :
+      response.status === 413 ? "请求内容过大，请减少输入内容。" :
+      [502, 503, 504].includes(response.status) ? "服务暂时无法响应，请稍后重试或联系服务管理员。" : "服务响应异常，请刷新页面后重试。";
+    const error = new Error(message);
+    error.resultUnknown = ![413, 429].includes(response.status);
+    throw error;
+  }
   if (!response.ok) {
     if (response.status === 401 && !["/unlock", "/setup", "/recover"].includes(path)) showGate();
     throw new Error(data.error || "操作失败，请重试");
@@ -137,7 +146,7 @@ $("entry-form").onsubmit = async e => {
   finally { $("save").disabled = false; }
 };
 async function copyText(value) {
-  if (!window.isSecureContext) throw new Error("当前地址不支持安全复制，请使用本机 127.0.0.1 地址打开，或显示密码后手动复制。");
+  if (!window.isSecureContext) throw new Error("当前地址不是安全上下文，请使用证书受信任的 HTTPS 地址，或在服务本机通过 localhost 打开；也可显示密码后手动复制。");
   if (!navigator.clipboard?.writeText) throw new Error("此浏览器不支持剪贴板，请显示密码后手动复制。");
   try { await navigator.clipboard.writeText(value); toast("已复制，请留意系统剪贴板历史"); }
   catch (error) { throw new Error(error.name === "NotAllowedError" ? "浏览器拒绝复制，请允许剪贴板权限，或显示后手动复制。" : "复制执行失败，请显示密码后手动复制。"); }
@@ -160,7 +169,7 @@ async function openDetail(id) {
 $("close-details").onclick = () => $("details").close();
 $("details").addEventListener("close", () => { currentDetail = null; $("detail-body").replaceChildren(); });
 $("detail-edit").onclick = () => { const id = currentDetail.id; $("details").close(); openEditor(id).catch(report); };
-function openDelete(entry) { deletingId = entry.id; $("delete-description").textContent = `即将从本地保险库删除「${entry.title}」。`; $("delete-error").textContent = ""; $("delete-dialog").showModal(); $("cancel-delete").focus(); }
+function openDelete(entry) { deletingId = entry.id; $("delete-description").textContent = `即将从保险库删除「${entry.title}」。`; $("delete-error").textContent = ""; $("delete-dialog").showModal(); $("cancel-delete").focus(); }
 $("cancel-delete").onclick = () => $("delete-dialog").close();
 $("confirm-delete").onclick = async () => {
   $("confirm-delete").disabled = true;

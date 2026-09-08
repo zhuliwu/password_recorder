@@ -15,6 +15,7 @@ from werkzeug.exceptions import HTTPException
 
 from .crypto import decrypt, derive_key, encrypt
 from .recovery import RECOVERY_CONTEXT, generate_recovery_key, parse_recovery_key
+from .access import normalize_public_origin
 
 CATEGORIES = ("工作", "个人", "财务", "社交", "其他")
 IDLE_SECONDS = 15 * 60
@@ -56,9 +57,12 @@ def validate_entry(data):
     return result
 
 
-def create_app(data_dir=None, port=8765):
+def create_app(data_dir=None, port=8765, public_origin=None):
+    public_origin = normalize_public_origin(public_origin)
     app = Flask(__name__)
-    app.config.update(MAX_CONTENT_LENGTH=65536, IDLE_SECONDS=IDLE_SECONDS)
+    app.config.update(MAX_CONTENT_LENGTH=65536, IDLE_SECONDS=IDLE_SECONDS, PUBLIC_ORIGIN=public_origin)
+    allowed_hosts = {urlsplit(public_origin).netloc} if public_origin else {f"localhost:{port}", f"127.0.0.1:{port}"}
+    cookie_name = "__Host-vault_session" if public_origin else "vault_session"
     directory = Path(data_dir or "data").resolve()
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(directory, 0o700)
@@ -73,6 +77,8 @@ def create_app(data_dir=None, port=8765):
             CREATE TABLE IF NOT EXISTS entries (id TEXT PRIMARY KEY, payload BLOB NOT NULL);
             CREATE TABLE IF NOT EXISTS recovery (id INTEGER PRIMARY KEY CHECK(id=1), wrapped_key BLOB NOT NULL);
         """)
+        if public_origin and db.execute("SELECT 1 FROM metadata WHERE id=1").fetchone() is None:
+            raise ValueError("公网模式禁止创建保险库：请先用本地模式设置主密码，再启用 --public-origin")
     sessions = {}
     guard = threading.RLock()
     expiry_timer = [None]
@@ -100,18 +106,21 @@ def create_app(data_dir=None, port=8765):
             for sid in list(sessions):
                 if now - sessions[sid]["last"] >= app.config["IDLE_SECONDS"]:
                     del sessions[sid]
-            return sessions.get(request.cookies.get("vault_session"))
+            return sessions.get(request.cookies.get(cookie_name))
 
     @app.before_request
     def protect():
-        if request.host not in (f"localhost:{port}", f"127.0.0.1:{port}"):
+        if request.host.lower() not in allowed_hosts:
             raise APIError("不允许的 Host", 403)
+        if public_origin and not request.is_secure:
+            raise APIError("公网访问必须使用 HTTPS，请检查反向代理配置", 403)
         # Serialize local API work so logout cannot race an in-flight write.
         if request.path.startswith("/api/"):
             guard.acquire()
             g.vault_guard_held = True
         if request.method not in ("GET", "HEAD", "OPTIONS"):
-            if request.headers.get("Origin") != f"http://{request.host}":
+            expected_origin = public_origin or f"http://{request.host}"
+            if request.headers.get("Origin") != expected_origin:
                 raise APIError("请求来源验证失败，请刷新页面", 403)
             if request.mimetype != "application/json":
                 raise APIError("仅接受 JSON 请求", 415)
@@ -140,6 +149,8 @@ def create_app(data_dir=None, port=8765):
             "Referrer-Policy": "no-referrer",
             "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
         })
+        if public_origin and request.is_secure:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
         return response
 
     @app.errorhandler(APIError)
@@ -160,7 +171,7 @@ def create_app(data_dir=None, port=8765):
 
     @app.get("/")
     def index():
-        return render_template("index.html")
+        return render_template("index.html", remote_mode=bool(public_origin))
 
     @app.get("/api/status")
     def status():
@@ -215,11 +226,13 @@ def create_app(data_dir=None, port=8765):
             expiry_timer[0].daemon = True
             expiry_timer[0].start()
         response = jsonify(ok=True)
-        response.set_cookie("vault_session", token, httponly=True, samesite="Strict", path="/")
+        response.set_cookie(cookie_name, token, secure=bool(public_origin), httponly=True, samesite="Strict", path="/")
         return response
 
     @app.post("/api/setup")
     def setup():
+        if public_origin:
+            raise APIError("公网模式不允许初始化保险库", 403)
         password = password_input()
         with guard:
             if metadata():
@@ -333,7 +346,7 @@ def create_app(data_dir=None, port=8765):
             if expiry_timer[0]:
                 expiry_timer[0].cancel()
         response = jsonify(ok=True)
-        response.delete_cookie("vault_session")
+        response.delete_cookie(cookie_name, secure=bool(public_origin), httponly=True, samesite="Strict", path="/")
         return response
 
     @app.post("/api/touch")

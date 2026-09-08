@@ -12,6 +12,7 @@
 - 解锁后生成恢复密钥，确认保存后启用；忘记主密码时使用恢复密钥重置主密码并保留账号数据。
 - SQLite 持久化：整条记录（包括名称与备注）使用 AES-256-GCM 加密，重启后使用原主密码解锁。
 - 适配桌面和窄屏布局，使用本地静态资源。
+- 可选公网 HTTPS 模式：通过同机 Nginx 反向代理访问，支持没有域名的公网 IP；数据库仍保存在运行程序的服务器上。
 
 ## 启动
 
@@ -33,12 +34,24 @@ python3 -m venv .venv
 
 默认数据库位于启动工作目录下的 `data/vault.db`；请始终在同一目录启动，或显式指定固定的绝对数据目录。数据目录必须专用于本应用，程序将其权限限制为 `0700`，数据库为 `0600`。Ctrl+C 停止，重新运行后输入原主密码即可继续使用。
 
+## 公网 IP + HTTPS 访问
+
+针对 `139.224.25.251`、暂无域名或证书的完整步骤见 [公网部署说明](deploy/PUBLIC_HTTPS.md)，包含首次初始化、Let’s Encrypt IP 证书、Nginx 配置生成、systemd 模板、自动续期与回退。当前交付代码和步骤，尚未部署到此 IP 或申请正式证书。
+
+先通过本地模式（服务器可使用 SSH 隧道）初始化主密码，再配置同机 Nginx 与受信任证书，并以普通用户启动：
+
+```bash
+.venv/bin/python -m vault --data-dir /absolute/path/to/private-vault --public-origin https://139.224.25.251
+```
+
+应用始终只监听 `127.0.0.1`，对外由 Nginx 提供 HTTPS；`--public-origin` 不会自动安装代理或签发证书。公网模式禁止初始化新库，拒绝不匹配的 Host、Origin 和非 HTTPS 请求，只信任同机代理的协议头。非默认 HTTPS 端口必须同时写入应用参数和代理配置。
+
 ## 数据与安全边界
 
 - 主密码通过 Scrypt（N=131072、r=8、p=1、随机 16 字节盐）派生密钥，不保存主密码或明文密钥；AES-GCM 使用随机 12 字节 nonce 和记录 ID 作为关联数据。SQLite 中可见记录数量和随机 ID，记录内容为密文。启用恢复功能后，数据库额外存储由随机 256 位恢复密钥加密的保险库密钥，不保存恢复密钥本身。
 - 解锁密钥仅保留在服务端进程内存，会话过期或锁定后丢弃引用。Python 无法保证内存的物理擦除；本程序不防御已控制当前操作系统用户或进程的攻击者。
 - 单进程、单个活跃浏览器会话；另一浏览器解锁会使旧会话失效。不要用多进程 WSGI 方式启动。
-- Cookie 使用 HttpOnly 和 SameSite=Strict。由于仅支持 loopback HTTP，不设 Secure；服务限制 Host 与端口，写操作校验同源 Origin、自定义请求头及 JSON 格式，无跨域授权。不要配置公网或局域网反向代理。
+- Cookie 使用 HttpOnly 和 SameSite=Strict；默认本地 HTTP 模式不设 Secure，显式公网模式使用 Secure 和 `__Host-vault_session`。服务限制 Host 与端口，写操作校验同源 Origin、自定义请求头及 JSON 格式，无跨域授权。公网模式必须配合同机 HTTPS 代理，不能直接开放后端端口。
 - 主密码解锁、生成恢复密钥时的主密码验证、恢复密钥验证共用限流：连续 5 次验证失败后暂停尝试 30 秒，计数仅在当前进程有效。
 - 复制依赖浏览器安全上下文与剪贴板授权。拒绝、不支持、运行失败均给出手动复制路径；不会自动清理系统剪贴板或其历史。
 - 主密码和已启用的恢复密钥同时丢失，无法恢复数据。尚无使用旧主密码直接修改主密码的独立界面、导入导出界面、云同步、多人协作或浏览器自动填充。
@@ -79,6 +92,14 @@ node --check vault/static/recovery.js
 
 浏览器脚本优先使用系统 `google-chrome`，也可通过 `CHROME_PATH` 指定 Chrome 路径；没有系统 Chrome 时使用 `playwright install chromium` 安装浏览器。脚本创建临时数据库、启动真实 HTTP 服务、运行浏览器操作，结束时停止服务并删除测试库。截图保存于被 Git 忽略的 `test-results/`。
 
+另有真实 HTTPS 代理测试，需要 Nginx、Chrome、Playwright 和 cryptography，以普通用户执行（替换 Nginx 路径）：
+
+```bash
+.venv/bin/python tests/https_smoke.py --nginx /usr/sbin/nginx
+```
+
+脚本使用非 loopback IP、临时端口/数据库/证书，覆盖真实代理、Secure Cookie、CRUD、剪贴板、恢复和限流；Python 校验临时 CA/IP SAN，Chrome 使用仅针对测试证书公钥的信任例外。它不验证目标公网 IP、正式证书签发或服务器防火墙。
+
 本轮验证的实际数量、环境和限制见 [handoff.md](handoff.md)。单元测试、构建、集成测试和真实环境验证分别记录。
 
 ## 项目结构
@@ -88,6 +109,8 @@ vault/__init__.py       API、会话、SQLite 持久化与请求保护
 vault/crypto.py         Scrypt 与 AES-GCM
 vault/recovery.py       恢复密钥生成和格式解析
 vault/__main__.py       本地 Waitress 启动入口
+vault/access.py         公网来源规范化、可信代理选项
+vault/proxy_config.py   Nginx 配置生成器
 vault/templates/       中文页面
 vault/static/          样式、前端交互及图标
 tests/test_crypto.py    加密和字段校验单元测试
@@ -95,4 +118,8 @@ tests/test_api.py       API 与数据库集成测试
 tests/test_recovery.py  恢复、兼容、凭据失效、事务回滚测试
 tests/test_recovery_crypto.py  恢复密钥格式单元测试
 tests/browser_smoke.py  真实 HTTP 与 Chrome 端到端测试
+tests/test_access.py    来源及代理配置单元测试
+tests/test_public_api.py 公网请求保护与 API 集成测试
+tests/https_smoke.py    真实 Nginx、非 loopback HTTPS 与 Chrome 测试
+deploy/                公网 IP 部署步骤、ACME 及 systemd 模板
 ```
